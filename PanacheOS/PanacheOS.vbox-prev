@@ -8,7 +8,7 @@
 ** Written by VirtualBox 7.2.0 (r170228)
 -->
 <VirtualBox xmlns="http://www.virtualbox.org/" version="1.19-macosx">
-  <Machine uuid="{70fe98bd-8137-42e1-887a-83a5ae829191}" name="PanacheOS" OSType="Other" snapshotFolder="Snapshots" lastStateChange="2025-09-23T07:54:56Z">
+  <Machine uuid="{70fe98bd-8137-42e1-887a-83a5ae829191}" name="PanacheOS" OSType="Other" snapshotFolder="Snapshots" lastStateChange="2025-09-23T07:55:00Z">
     <MediaRegistry>
       <HardDisks>
         <HardDisk uuid="{e886d981-6274-465c-90de-84c1757d3bbe}" location="PanacheOS.vdi" format="VDI" type="Normal"/>
@@ -42,11 +42,7 @@
       <AudioAdapter useDefault="true" driver="CoreAudio" enabled="true" enabledOut="true"/>
       <Clipboard/>
       <GuestProperties>
-        <GuestProperty name="/VirtualBox/GuestAdd/GuiOnFocus" value="0" timestamp="1758614096610173000" flags="TRANSIENT, RDONLYGUEST"/>
         <GuestProperty name="/VirtualBox/HostInfo/GUI/LanguageID" value="en_US" timestamp="1758614100398729000" flags="RDONLYGUEST"/>
-        <GuestProperty name="/VirtualBox/HostInfo/VBoxRev" value="170228" timestamp="1758614072283902002" flags="TRANSIENT, RDONLYGUEST"/>
-        <GuestProperty name="/VirtualBox/HostInfo/VBoxVer" value="7.2.0" timestamp="1758614072283902000" flags="TRANSIENT, RDONLYGUEST"/>
-        <GuestProperty name="/VirtualBox/HostInfo/VBoxVerExt" value="7.2.0" timestamp="1758614072283902001" flags="TRANSIENT, RDONLYGUEST"/>
       </GuestProperties>
       <StorageControllers>
         <StorageController name="IDE" type="PIIX4" PortCount="2" useHostIOCache="true" Bootable="true">

@@ -8,7 +8,7 @@
 ** Written by VirtualBox 7.2.0 (r170228)
 -->
 <VirtualBox xmlns="http://www.virtualbox.org/" version="1.19-macosx">
-  <Machine uuid="{70fe98bd-8137-42e1-887a-83a5ae829191}" name="PanacheOS" OSType="Other" snapshotFolder="Snapshots" lastStateChange="2025-09-23T07:55:00Z">
+  <Machine uuid="{70fe98bd-8137-42e1-887a-83a5ae829191}" name="PanacheOS" OSType="Other" snapshotFolder="Snapshots" lastStateChange="2025-09-23T08:35:54Z">
     <MediaRegistry>
       <HardDisks>
         <HardDisk uuid="{e886d981-6274-465c-90de-84c1757d3bbe}" location="PanacheOS.vdi" format="VDI" type="Normal"/>
@@ -36,7 +36,7 @@
       </USB>
       <Network>
         <Adapter slot="0" enabled="true" MACAddress="080027005B35">
-          <NAT/>
+          <NAT localhost-reachable="true"/>
         </Adapter>
       </Network>
       <AudioAdapter useDefault="true" driver="CoreAudio" enabled="true" enabledOut="true"/>
