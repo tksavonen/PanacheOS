@@ -1,79 +1,124 @@
 ; boot.asm
 
-; load boot sector to address
 [org 0x7c00]
 
-; load kernel from disk
-mov ah, 0x02 ; BIOS read sectors
-mov al, 5 ; number of sectors to read
-mov ch, 0 ; cylinder
-mov cl, 2 ; sector (start at 2, since 1 is bootloader)
-mov dh, 0 ; head
-mov dl, 0x80 ; hard disk
-mov bx, 0x1000 ; destination address
-int 0x13
-jc disk_error ; jump if error
-jmp 0x1000 ; jump to kernel
-
-; if error
-disk_error:
-	mov si, msg_disk_error
-	call print_string
-	jmp $
-
-; set video mode to 80x25 text
+; set video mode
 mov ah, 0x00
 mov al, 0x03
 int 0x10
 
-; print "booting"
+; print boot messages
 mov si, msg_booting
 call print_string
 
-; print "loading kernel"
-mov si, msg_loading_kernel
-call print_string
-
-; print "set video mode = 80x25"
 mov si, msg_video_mode
 call print_string
 
-; print "valid boot signature"
 mov si, msg_signature
 call print_string
 
-; print "Welcome to panacheOS."
-mov si, msg_welcome
+mov si, msg_loading_kernel
 call print_string
 
+; disk read check
+mov si, msg_drive_type
+call print_string
+mov al, dl
+call print_hex
+
+; insert line break
+mov ah, 0x0E        ; teletype output function
+mov al, 13          ; carriage return
+int 0x10
+mov al, 10          ; line feed
+int 0x10
+
+; -------------------------------
+; BIOS disk read
+; -------------------------------
+mov ah, 0x02        ; BIOS read sectors
+mov al, 1           ; number of sectors to read
+mov ch, 0           ; cylinder
+mov cl, 2           ; sector (start at 2)
+mov dh, 0           ; head
+mov dl, 0x00        ; floppy drive
+mov bx, 0x1000      ; destination address
+int 0x13
+jc disk_error       ; if carry flag set, jump to error
+
+; print success message
+mov si, msg_disk_success
+call print_string
+
+; print number of sectors requested
+mov al, 1           ; sectors requested
+call print_hex      ; print as hex
+
+jmp 0x1000          ; jump to kernel
+
+; -------------------------------
+; disk error handler
+; -------------------------------
+disk_error:
+mov si, msg_disk_error
+call print_string
 jmp $
 
 ; -------------------------------
-; print string function (teletype)
+; print string function
 ; -------------------------------
 print_string:
-    lodsb               ; load byte at [SI] into AL and increment SI
-    cmp al, 0           ; check for null terminator
+    lodsb
+    cmp al, 0
     je .done
-    mov ah, 0x0E        ; BIOS teletype output
+    mov ah, 0x0E
     int 0x10
     jmp print_string
 .done:
     ret
 
-hang:
-    jmp $               ; infinite loop, always display black
+; -------------------------------
+; print hex value in AL
+; -------------------------------
+print_hex:
+    push ax
+    mov ah, 0x0E
+
+    ; high nibble
+    mov bl, al
+    shr bl, 4
+    add bl, '0'
+    cmp bl, '9'
+    jbe .print1
+    add bl, 7
+.print1:
+    mov al, bl
+    int 0x10
+
+    ; low nibble
+    pop ax
+    mov bl, al
+    and bl, 0x0F
+    add bl, '0'
+    cmp bl, '9'
+    jbe .print2
+    add bl, 7
+.print2:
+    mov al, bl
+    int 0x10
+
+    ret
 
 ; -------------------------------
-; boot messages
+; messages
 ; -------------------------------
-msg_booting     db "booting", 13, 10, 0
-msg_disk_error db "disk read error.", 13, 10, 0
-msg_video_mode  db "set video mode = 80x25", 13, 10, 0
+msg_drive_type     db "drive type: ", 0
+msg_booting        db "booting", 13, 10, 0
+msg_video_mode     db "set video mode = 80x25", 13, 10, 0
+msg_signature      db "valid boot signature", 13, 10, 0
 msg_loading_kernel db "loading kernel", 13, 10, 0
-msg_signature   db "valid boot signature", 13, 10, 0
-msg_welcome     db "Welcome to panacheOS.", 13, 10, 0
+msg_disk_success   db "disk read success! sectors: ", 0
+msg_disk_error     db "disk read error!", 13, 10, 0
 
 times 510 - ($ - $$) db 0
-dw 0xAA55              ; boot signature
-
+dw 0xAA55
