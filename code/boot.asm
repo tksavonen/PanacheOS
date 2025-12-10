@@ -37,7 +37,7 @@ int 0x10
 ; BIOS disk read
 ; -------------------------------
 mov ah, 0x02        ; BIOS read sectors
-mov al, 1           ; number of sectors to read
+mov al, 8           ; number of sectors to read
 mov ch, 0           ; cylinder
 mov cl, 2           ; sector (start at 2)
 mov dh, 0           ; head
@@ -51,10 +51,16 @@ mov si, msg_disk_success
 call print_string
 
 ; print number of sectors requested
-mov al, 1           ; sectors requested
+mov al, 8           ; sectors requested
 call print_hex      ; print as hex
 
-jmp 0x1000          ; jump to kernel
+mov ax, 0x9000
+mov ss, ax
+mov sp, 0xFFFF
+mov ax, 0x0000
+mov ds, ax
+mov es, ax
+jmp 0x1000          ; jump to kernel, hand over boot
 
 ; -------------------------------
 ; disk error handler
