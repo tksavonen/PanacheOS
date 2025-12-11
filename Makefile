@@ -4,16 +4,16 @@ LD      = i686-elf-ld	      # or i686-elf-ld
 OBJCOPY = i686-elf-objcopy
 
 CFLAGS  = -m32 -ffreestanding -O2 -Wall -Wextra
-LDFLAGS = -m elf_i386
+LDFLAGS = 
 
 all: panacheOS.img
 
-# --- Stage 1: boot sector (flat binary) ---
+# --- boot sector ---
 
 st1.bin: st1.asm
 	$(AS) -f bin st1.asm -o st1.bin
 
-# --- Stage 2: entry (asm) + kernel (C) -> ELF -> flat bin ---
+# --- kernel ---
 
 k_entry.o: k_entry.asm
 	$(AS) -f elf32 k_entry.asm -o k_entry.o
@@ -21,13 +21,28 @@ k_entry.o: k_entry.asm
 kernel.o: kernel.c
 	$(CC) $(CFLAGS) -c kernel.c -o kernel.o
 
-kEntry.elf: k_entry.o kernel.o link.ld
-	$(LD) $(LDFLAGS) -T link.ld -o kEntry.elf k_entry.o kernel.o
+ports.o: ports.c
+	$(CC) $(CFLAGS) -c ports.c -o ports.o
+
+idt.o: idt.c
+	$(CC) $(CFLAGS) -c idt.c -o idt.o
+
+irq.o: irq.c
+	$(CC) $(CFLAGS) -c irq.c -o irq.o
+
+isr.o: isr.asm
+	$(AS) -f elf32 isr.asm -o isr.o
+
+# --- k_entry > ELF > binary ---
+
+kEntry.elf: k_entry.o kernel.o ports.o idt.o irq.o isr.o link.ld
+	$(LD) $(LDFLAGS) -T link.ld -o kEntry.elf k_entry.o kernel.o ports.o idt.o irq.o isr.o
 
 kEntry.bin: kEntry.elf
 	$(OBJCOPY) -O binary kEntry.elf kEntry.bin
+	truncate -s $$((64*512)) kEntry.bin
 
-# --- Final image: Stage 1 + Stage 2 ---
+# --- boot + k_entry ---
 
 panacheOS.img: st1.bin kEntry.bin
 	cat st1.bin kEntry.bin > panacheOS.img
@@ -36,4 +51,4 @@ run: panacheOS.img
 	qemu-system-i386 -drive file=panacheOS.img,format=raw,if=floppy
 
 clean:
-	rm -f st1.bin kEntry.bin kEntry.elf k_entry.o kernel.o panacheOS.img
+	rm -f *.o st1.bin kEntry.bin kEntry.elf panacheOS.img

@@ -16,7 +16,19 @@ start:
     ; BIOS gives us boot drive in DL
     mov [boot_drive], dl
 
-    ; reset disk system
+	mov si, msg_debug
+.print_loop_debug:
+	lodsb
+	cmp al, 0
+	je .after_debug
+	mov ah, 0x0E
+	mov bh, 0x00
+	mov bl, 0x07
+	int 0x10
+	jmp .print_loop_debug
+.after_debug:
+
+    ; reset/read disk system
     mov ah, 0x00
     mov dl, [boot_drive]
     int 0x13
@@ -63,6 +75,17 @@ disk_error:
     jmp .hang
 
 read_st2_ok:
+	mov si, msg_loaded
+.print_loaded:
+	lodsb
+	cmp al, 0
+	je .after_loaded
+	mov ah, 0x0E
+	mov bh, 0x00
+	mov bl, 0x07
+	int 0x10
+	jmp .print_loaded
+.after_loaded:
 	; stage 2 is loaded at 0000:1000
 	jmp 0x0000:0x1000		; jump to st2.asm
 
@@ -72,9 +95,11 @@ boot_drive: db 0
 
 ; how many sectors of Stage 2 to load
 ; 1 sector = 512 bytes. 8 sectors = 4096 bytes.
-STAGE2_SECTORS equ 8
+STAGE2_SECTORS equ 32
 
 msg_disk_error: db "Disk read error", 0
+msg_debug: db "Hi...",13,10,0
+msg_loaded: db "Stage2 loaded jump to kernel", 13, 10, 0
 LOG_ERR_COLOR	equ 0x0C ; color for error msg (light red)
 
 ; boot sector signature

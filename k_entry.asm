@@ -4,9 +4,10 @@
 BITS 16
 
 global stage2_start
+global idt_flush
 extern kernel_main
 
-stage2_start
+stage2_start:
 	cli
 
 	; basic segments + rm stack
@@ -49,3 +50,8 @@ pm_entry:
 .hang:
 	hlt						; halt CPU
 	jmp .hang
+
+idt_flush:
+    mov eax, [esp+4]    ; first argument (pointer to idt_ptr)
+    lidt [eax]
+    ret
