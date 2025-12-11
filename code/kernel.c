@@ -2,6 +2,8 @@
 
 #include <stdint.h>
 #include "headers/irq.h"
+#include "headers/string.h"
+#include "headers/kernel.h"
 
 #define VGA_TEXT_BUFFER ((uint8_t*)0xB8000)
 #define VGA_WIDTH  80
@@ -51,6 +53,22 @@ void kprintln(const char* s) {
     kputchar('\n');
 }
 
+void shutdown(void) {
+	kprintln("System halted. You may close the VM.");
+	for (;;) { __asm__ __volatile__("hlt");}
+}
+
+void handle_command(const char *cmd) {
+	if (strcmp(cmd, "shutdown") == 0)
+	{
+		shutdown();
+	}
+	else
+	{
+		kprintln("Unknown command");
+	}
+}
+
 void kernel_main(void) {
     const uint8_t LOG_INFO_COLOR  = 0x0B; // light cyan
     const uint8_t LOG_OK_COLOR    = 0x0A; // light green
@@ -59,7 +77,7 @@ void kernel_main(void) {
     kclear_screen();
 
     text_attr = LOG_INFO_COLOR;
-    kprintln("panacheOS C kernel");
+    kprintln("panacheOS C kernel\n");
 
     text_attr = LOG_OK_COLOR;
     kprintln("[ OK ] Reached kernel_main()");

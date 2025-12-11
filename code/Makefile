@@ -33,10 +33,13 @@ irq.o: irq.c
 isr.o: isr.asm
 	$(AS) -f elf32 isr.asm -o isr.o
 
+string.o: string.c
+	$(CC) $(CFLAGS) -c string.c -o string.o
+
 # --- k_entry > ELF > binary ---
 
-kEntry.elf: k_entry.o kernel.o ports.o idt.o irq.o isr.o link.ld
-	$(LD) $(LDFLAGS) -T link.ld -o kEntry.elf k_entry.o kernel.o ports.o idt.o irq.o isr.o
+kEntry.elf: k_entry.o kernel.o ports.o idt.o irq.o isr.o string.o link.ld
+	$(LD) $(LDFLAGS) -T link.ld -o kEntry.elf k_entry.o kernel.o ports.o idt.o irq.o isr.o string.o
 
 kEntry.bin: kEntry.elf
 	$(OBJCOPY) -O binary kEntry.elf kEntry.bin
