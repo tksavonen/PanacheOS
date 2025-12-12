@@ -1,33 +1,41 @@
 // irq.c
 
 #include <stdint.h>
+#include <stdbool.h>
 #include "headers/ports.h"
 #include "headers/idt.h"
 #include "headers/irq.h"
 #include "headers/kernel.h"
+#include "headers/string.h"
 
 #define INPUT_MAX 80
 
 int uptime = 0;
+bool should_cap = false;
 
-static char input_buffer[INPUT_MAX];
+char ch;
+char input_buffer[INPUT_MAX];
 static int input_len = 0;
-static volatile int line_ready = 0; // set to 1 when Enter is pressed
 
-const static char scancode_ascii[128] =
+volatile int line_ready = 0; // set to 1 when Enter is pressed
+volatile uint32_t irq0_seen = 0;
+
+static delay_t cpu_delay;
+delay_t delays[MAX_DELAYS];
+
+static const char scancode_ascii[128] =
 {
     // numbers
-    [0x02] = '1',
-    [0x03] = '2',
-    [0x04] = '3',
-    [0x05] = '4',
-    [0x06] = '5',
-    [0x07] = '6',
-    [0x08] = '7',
-    [0x09] = '8',
-    [0x0A] = '9',
-    [0x0B] = '0',
-    [0x0C] = '+',
+    [0x02]='1',
+    [0x03]='2',
+    [0x04]='3',
+    [0x05]='4',
+    [0x06]='5',
+    [0x07]='6',
+    [0x08]='7',
+    [0x09]='8',
+    [0x0A]='9',
+    [0x0B]='0',
 
     // letters
     [0x1E]='a',
@@ -59,7 +67,23 @@ const static char scancode_ascii[128] =
     [0x1A]='å',
     [0x28]='ä',
     [0x27]='ö',
+
+    // special characters
+    [0x0C]='+',
+    [0x34]='.',
+    [0x33]=',',
+    [0x35]='-',  
 };
+
+char to_upper(char c) {
+	if (c >= 'a' && c <= 'z')
+		return c - 0x20; 
+	return c;	}
+	
+char to_lower(char c) {
+	if (c >= 'a' && c <= 'z')
+		return c + 0x20;
+	return c;	}
 
 // log from handlers
 void kprintln(const char *s);   
@@ -82,11 +106,18 @@ static void pic_remap(void) {
     outb(0xA1, 0x01);
 }
 
-static void timer_phase(uint32_t hz) {
-    uint32_t divisor = 1193180 / hz;
-    outb(0x43, 0x36);                 // command port
-    outb(0x40, divisor & 0xFF);       // low byte
-    outb(0x40, (divisor >> 8) & 0xFF); // high byte
+void timer_phase(unsigned int hz) {
+    if (hz == 0) return;                 // avoid div-by-zero
+
+    unsigned int divisor = 1193182u / hz;
+    if (divisor == 0) divisor = 1;       // safety: minimum divisor
+
+    // 0x36 = channel 0, access mode: lobyte/hibyte, mode 3 (square wave), binary
+    outb(0x43, 0x36);
+
+    // send low byte then high byte
+    outb(0x40, (uint8_t)(divisor & 0xFF));
+    outb(0x40, (uint8_t)((divisor >> 8) & 0xFF));
 }
 
 // DEBUG
@@ -103,7 +134,6 @@ void dump_scancode_table(void) {
         kputchar('\n');
     }
 }
-// DEBUG ^ ^ ^
 
 void irq_init(void) {
     idt_install();
@@ -114,40 +144,85 @@ void irq_init(void) {
     outb(0x21, 0xFC); // 11111100b -> IRQ0+1 ON, others OFF
     outb(0xA1, 0xFF); // mask all on slave PIC for now
 
-    // set timer to 4Hz
-    // 4Hz == ROUGHLY 1 SECOND
-    timer_phase(4);
-
-    // enable interrupts globally
-    __asm__ __volatile__("sti");
+    timer_phase(1000);				// set PTI freq to 1000Hz (1ms tick)
+    __asm__ __volatile__("sti");	// enable interrupts globally
 }
 
 // --- C handlers called from isr.asm ---
 
 void irq0_handler(void) {
     timer_ticks++;
-    if (timer_ticks % 50 == 0) {
-       // kprintln("[TIMER] tick");
-        uptime += 1;
-        //kprint("Uptime: ");
-        //kprint_int(uptime);
+    if (timer_ticks % 1000 == 0) {
+        uptime++;;
     }
-
-    // end of interrupt (EOI) to master PIC
-    outb(0x20, 0x20);
+    outb(0x20, 0x20); // end of EOI to master PIC
 }
+
+bool start_delay(uint32_t ms, delay_callback_t cb) {
+    for (int i = 0; i < MAX_DELAYS; i++) {
+        if (!delays[i].active) {
+            delays[i].target_tick = timer_ticks + ms;
+            delays[i].callback = cb;
+            delays[i].active = true;
+            return true; // delay scheduled
+        }
+    }
+    return false; // no free slot
+}
+
+void check_delays(void) {
+    for (int i = 0; i < MAX_DELAYS; i++) {
+        if (delays[i].active &&
+            (int32_t)(timer_ticks - delays[i].target_tick) >= 0) {
+            delays[i].active = false;
+            if (delays[i].callback) {
+                delays[i].callback();  }
+        }
+    }
+}
+
+bool delay_expired(void) {
+    if (!cpu_delay.active) return true;
+
+    if ((int32_t)(timer_ticks - cpu_delay.target_tick) >= 0) {
+        cpu_delay.active = false;
+        return true;
+    }
+    return false;
+}
+
+// call delay like this:
+//__asm__ __volatile__("sti"); delay(time);
 
 // --- Register key events ---
 void irq1_handler(void) {
     uint8_t sc = inb(0x60);  // read scancode
-    if (sc & 0x80)			   // ignore break codes
+
+    ch = scancode_ascii[sc & 0x7F];
+
+    switch(sc) {
+    	case 0x2A:	// left shift down
+    	case 0x36:	// right shift down
+    		should_cap=true;
+    		outb(0x20,0x20);
+    		return;
+
+    	case 0xAA:	// left shift up
+    	case 0xB6:	// right shift down
+    	should_cap=false;
+    	outb(0x20,0x20);
+    	return;
+    }
+    
+    if (sc & 0x80)			   // ignore break codes 
     { outb(0x20,0x20); return; }
 
-    if (sc==0x0E) { kprint("[BS]"); if (input_len>0){input_len--; // if 'backspace'
-    kputchar('\b'); kputchar(' '); kputchar('\b'); }
-    outb(0x20, 0x20); return; } 
-
-    char ch = scancode_ascii[sc];
+    if (sc==0x0E) {				// if 'backspace'
+    	if (input_len > 0) {
+    		input_len--; kputchar('\b');
+    	}
+    	outb(0x20,0x20); return;
+    }
 							
     if (sc == 0x1C) {		   // if 'enter'
     	if (input_len < INPUT_MAX) {
@@ -160,11 +235,51 @@ void irq1_handler(void) {
     
     (void)sc;
     int kc = sc;
+	
+    if (should_cap && ch >= 'a' && ch <= 'z') ch -= 0x20;
+
+    if (should_cap)
+    {
+    	if (sc==0x02) {			// '!'
+    		kputchar('!');
+    		outb(0x20,0x20); return;
+    	}
+    	else if (sc==0x0C) {	// '?'
+    		kputchar('?');
+    		outb(0x20,0x20); return;
+    	}
+    	else if (sc==0x04)	{	// '#'
+    		kputchar('#');
+    		outb(0x20,0x20); return;
+    	}
+    	else if (sc==0x06) {	// '%'
+    		kputchar('%');
+    		outb(0x20,0x20); return;
+    	}	
+    	else if (sc==0x09) {	// '('
+    		kputchar('(');
+    		outb(0x20,0x20); return;
+    	}
+    	else if (sc==0x0A) {	// ')'
+    		kputchar(')');
+    		outb(0x20,0x20); return;
+    	}
+    }
     
-    kputchar(ch); //kprint_int(cursor_pos);	// type
+    kputchar(ch); 
+    
     if (input_len < INPUT_MAX - 1) { input_buffer[input_len++] = ch; }
-    // kprint_int(sc); // type scancode (debug)
+    //kprint_int(sc); // type scancode (debug)
+    //kprint(input_buffer);
 
     // EOI
     outb(0x20, 0x20);
+}
+
+void handle_command(const char* cmd) {
+	if (strcmp(cmd, "shutdown") == 0)
+	{
+		kprint("Putting CPU to sleep...");
+		start_delay(2000, shutdown);	// 2000 ms = 2 seconds
+	}
 }
