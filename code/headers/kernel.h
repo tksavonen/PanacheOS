@@ -14,6 +14,7 @@ void shutdown(void);
 
 char to_upper(char c);
 
+extern unsigned int kstrlen(const char* s);
 extern int uptime;
 extern uint16_t cursor_pos;
 

@@ -15,6 +15,7 @@ void irq_init(void);
 void delay(uint32_t sec);
 void check_delays(void);
 void handle_command(const char* cmd);
+void kclear_screen(void);
 
 extern bool should_cap;
 extern char input_buffer[INPUT_MAX];

@@ -9,6 +9,7 @@
 #include "headers/string.h"
 
 #define INPUT_MAX 80
+#define MAX_ARGS 8
 
 int uptime = 0;
 bool should_cap = false;
@@ -17,6 +18,7 @@ char ch;
 char input_buffer[INPUT_MAX];
 static int input_len = 0;
 
+unsigned int ktstrlen(const char* s);
 volatile int line_ready = 0; // set to 1 when Enter is pressed
 volatile uint32_t irq0_seen = 0;
 
@@ -73,7 +75,16 @@ static const char scancode_ascii[128] =
     [0x34]='.',
     [0x33]=',',
     [0x35]='-',  
+    [0x39]=' '
 };
+
+static void print_help(void) {
+	kprintln("Available commands: ");
+	kprintln("  clear       Clear screen.");
+	kprintln("  shutdown    Shut down the system now.");
+	kprintln("  uptime      Total time in seconds the system has been on.");
+	kprint("\n"); 
+}
 
 char to_upper(char c) {
 	if (c >= 'a' && c <= 'z')
@@ -134,6 +145,7 @@ void dump_scancode_table(void) {
         kputchar('\n');
     }
 }
+// DEBUG ^
 
 void irq_init(void) {
     idt_install();
@@ -270,16 +282,61 @@ void irq1_handler(void) {
     
     if (input_len < INPUT_MAX - 1) { input_buffer[input_len++] = ch; }
     //kprint_int(sc); // type scancode (debug)
-    //kprint(input_buffer);
 
     // EOI
     outb(0x20, 0x20);
 }
 
+unsigned int tokenize(const char* input, char* tokens[], unsigned int max_tokens) {
+    unsigned int count = 0; const char* start = input;
+
+    while (*start && count < max_tokens) {
+        while (*start == ' ') start++;
+        if (*start == '\0') break;
+
+        tokens[count++] = (char*)start;	// mark token start
+        while (*start != ' ' && *start != '\0') start++; // move to end of token
+
+        if (*start != '\0') {	// terminate token if not end of string
+            *(char*)start = '\0';
+            start++;
+        }
+    }
+
+    return count;	}
+
+
 void handle_command(const char* cmd) {
-	if (strcmp(cmd, "shutdown") == 0)
+	// kprint("ran "); kprint(cmd); kprint("\n");	// DEBUG
+	// unsigned int length = kstrlen(cmd);			// DEBUG
+	// kprint_int(length); kprint("\n");			// DEBUG
+	char* tokens[MAX_ARGS];
+	unsigned int n = tokenize(cmd,tokens,MAX_ARGS);
+	if(n==0)return;
+
+	if (strcmp(tokens[0], "shutdown") == 0)
 	{
 		kprint("Putting CPU to sleep...");
 		start_delay(2000, shutdown);	// 2000 ms = 2 seconds
+	}
+	else if (strcmp(tokens[0], "clear") == 0) {
+		kclear_screen();
+	}
+	else if (strcmp(tokens[0], "help") == 0) {
+		print_help();
+	}
+	else if (strcmp(tokens[0], "uptime") == 0) {
+		kprint_int(uptime);
+		kprint("\n"); kprint("\n");
+	}
+	else if (strcmp(tokens[0], "echo") == 0 && n > 1) {
+		for (unsigned int i=1;i<n;i++) {
+			kprint(tokens[i]); kprint(" ");
+			if (i<n-1);
+		}
+		kprint("\n");
+	}
+	else {
+		kprintln("Unknown command");
 	}
 }

@@ -1,4 +1,4 @@
-// kernel.c - panacheOS C kernel
+// kernel.c - panacheOS C kernel "ANEMOIA"
 
 #include <stdint.h>
 #include "headers/irq.h"
@@ -25,7 +25,7 @@ static void update_hw_cursor(void) {
 }
 
 // clear entire screen
-static void kclear_screen(void) {
+void kclear_screen(void) {
     volatile uint8_t* vga = VGA_TEXT_BUFFER;
     for (int i = 0; i < VGA_WIDTH * VGA_HEIGHT; ++i) {
         vga[i*2]     = ' ';
@@ -136,12 +136,18 @@ void kprint_hex(uint32_t value) {
 	}
 }
 
+// get length of characters in string
+unsigned int kstrlen(const char* s) {
+	unsigned int len = 0;
+	while (s[len] != '\0') { len++; }
+	return len;
+}
+
 // CPU forever loop
 void shutdown(void) {
 	kprint("\n"); kprintln("System halted. You may close the VM.");
-	for (;;) { __asm__ __volatile__("hlt");}
+	for (;;) { asm volatile ("hlt"); }
 }
-
 
 void kernel_main(void) {
 	
@@ -189,7 +195,6 @@ void kernel_main(void) {
    		if (line_ready) {
    			handle_command(input_buffer);
    			line_ready=false;
-   		  }
+   	   }
    	}
-
  }
