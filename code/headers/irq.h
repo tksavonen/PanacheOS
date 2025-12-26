@@ -15,13 +15,17 @@ void irq_init(void);
 void delay(uint32_t sec);
 void check_delays(void);
 void handle_command(const char* cmd);
+void save_to_history(void);
 void kclear_screen(void);
+void handle_history_up(void);
+void handle_history_down(void);
 
 extern bool should_cap;
 extern char input_buffer[INPUT_MAX];
 extern volatile uint32_t timer_ticks;
 extern volatile uint32_t irq0_seen;
 extern volatile int line_ready;
+extern int input_len;
 
 typedef void (*delay_callback_t)(void);
 typedef struct {
@@ -31,5 +35,7 @@ typedef struct {
 } delay_t;
 
 extern delay_t delays[MAX_DELAYS];
+
+bool start_delay(uint32_t ms, delay_callback_t cb);
 
 #endif
