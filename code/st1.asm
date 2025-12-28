@@ -11,6 +11,7 @@ start:
     mov ds, ax
     mov es, ax
     mov ss, ax
+    mov di, MEMMAP_BUFFER
     mov sp, 0x7C00
 
     ; BIOS gives us boot drive in DL
@@ -68,7 +69,6 @@ disk_error:
     mov bl, LOG_ERR_COLOR           
     int 0x10
     jmp .print_loop
-
 .hang:
     cli
     hlt
@@ -86,8 +86,33 @@ read_st2_ok:
 	int 0x10
 	jmp .print_loaded
 .after_loaded:
-	; stage 2 is loaded at 0000:1000
-	jmp 0x0000:0x1000		; jump to st2.asm
+	xor ax, ax
+	mov es, ax
+	mov di, MEMMAP_BUFFER
+	xor ebx, ebx
+	xor bp, bp
+repeat:
+	mov eax, 0xE820
+	mov edx, 0x534D4150		; set signature at addr
+	mov ecx, 24				; gimme 24 bytes plz
+	mov di, di
+	int 0x15
+	jc fbyte_error
+
+	cmp eax, 0x534D4150		; verify signature
+	jc sig_error
+
+	inc bp
+	add di, 24
+	test ebx, ebx			; have we reached end
+	jne repeat
+	mov [MEMMAP_COUNT], bp
+	jmp 0x0000:0x1000		; jump to st2asm / stage2 loaded at 0000:1000
+
+sig_error:
+	mov si, msg_memsig_error
+fbyte_error:
+	mov si, msg_fbyte_error
 
 ; DATA
 
@@ -96,8 +121,13 @@ boot_drive: db 0
 ; how many sectors of Stage 2 to load
 ; 1 sector = 512 bytes. 8 sectors = 4096 bytes.
 STAGE2_SECTORS equ 32
+MEMMAP_BUFFER equ 0x0500
+
+MEMMAP_COUNT equ 0x04F0
 
 msg_disk_error: db "Disk read error", 0
+msg_memsig_error: db "Error getting valid memory map signature", 0
+msg_fbyte_error: db "Error fetching memory", 0
 msg_debug: db "Hi...",13,10,0
 msg_loaded: db "Stage2 loaded jump to kernel", 13, 10, 0
 LOG_ERR_COLOR	equ 0x0C ; color for error msg (light red)

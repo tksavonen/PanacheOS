@@ -9,16 +9,16 @@
 #include "headers/string.h"
 
 #define INPUT_MAX 80
-#define MAX_ARGS 8
 
 int uptime = 0;
+
 bool should_cap = false;
+static bool extended = false;
 
 char ch;
 char input_buffer[INPUT_MAX];
-static int input_len = 0;
+int input_len = 0;
 
-unsigned int ktstrlen(const char* s);
 volatile int line_ready = 0; // set to 1 when Enter is pressed
 volatile uint32_t irq0_seen = 0;
 
@@ -78,14 +78,6 @@ static const char scancode_ascii[128] =
     [0x39]=' '
 };
 
-static void print_help(void) {
-	kprintln("Available commands: ");
-	kprintln("  clear       Clear screen.");
-	kprintln("  shutdown    Shut down the system now.");
-	kprintln("  uptime      Total time in seconds the system has been on.");
-	kprint("\n"); 
-}
-
 char to_upper(char c) {
 	if (c >= 'a' && c <= 'z')
 		return c - 0x20; 
@@ -130,22 +122,6 @@ void timer_phase(unsigned int hz) {
     outb(0x40, (uint8_t)(divisor & 0xFF));
     outb(0x40, (uint8_t)((divisor >> 8) & 0xFF));
 }
-
-// DEBUG
-void dump_scancode_table(void) {
-    kprint("DUMP TABLE 0x00..0x1F:\n");
-    for (int i = 0; i < 0x20; i++) {
-        kprint_int(i);
-        kprint(": ");
-        char v = scancode_ascii[i];
-        if (v)
-            kputchar(v);
-        else
-            kputchar('.');
-        kputchar('\n');
-    }
-}
-// DEBUG ^
 
 void irq_init(void) {
     idt_install();
@@ -203,6 +179,15 @@ bool delay_expired(void) {
     return false;
 }
 
+void handle_extended_key(uint8_t sc) {
+	switch (sc) {
+		case 0x48: move_cursor_up();	break;
+		case 0x50: move_cursor_down();	break;
+		case 0x4B: move_cursor_left();	break;
+		case 0x4D: move_cursor_right();	break;
+	}
+}
+
 // call delay like this:
 //__asm__ __volatile__("sti"); delay(time);
 
@@ -211,6 +196,16 @@ void irq1_handler(void) {
     uint8_t sc = inb(0x60);  // read scancode
 
     ch = scancode_ascii[sc & 0x7F];
+
+    if (sc==0xE0) {
+    	extended=true;
+    	outb(0x20,0x20); return;
+    }
+    if (extended) {
+    	handle_extended_key(sc);
+    	extended=false;
+    	outb(0x20,0x20); return;
+    }
 
     switch(sc) {
     	case 0x2A:	// left shift down
@@ -252,28 +247,39 @@ void irq1_handler(void) {
 
     if (should_cap)
     {
-    	if (sc==0x02) {			// '!'
+    	if (sc==0x02) {			// !
+    		if (input_len<INPUT_MAX) { input_buffer[input_len++] = '!'; }
     		kputchar('!');
     		outb(0x20,0x20); return;
     	}
-    	else if (sc==0x0C) {	// '?'
+    	else if (sc==0x0C) {	// ?
+    	if (input_len<INPUT_MAX) { input_buffer[input_len++] = '?'; }
     		kputchar('?');
     		outb(0x20,0x20); return;
     	}
-    	else if (sc==0x04)	{	// '#'
+    	else if (sc==0x04)	{	// #
+    	if (input_len<INPUT_MAX) { input_buffer[input_len++] = '#'; }
     		kputchar('#');
     		outb(0x20,0x20); return;
     	}
-    	else if (sc==0x06) {	// '%'
+    	else if (sc==0x06) {	// %
+    	if (input_len<INPUT_MAX) { input_buffer[input_len++] = '%'; }
     		kputchar('%');
     		outb(0x20,0x20); return;
     	}	
-    	else if (sc==0x09) {	// '('
+    	else if (sc==0x09) {	// (
+    	if (input_len<INPUT_MAX) { input_buffer[input_len++] = '('; }
     		kputchar('(');
     		outb(0x20,0x20); return;
     	}
-    	else if (sc==0x0A) {	// ')'
+    	else if (sc==0x0A) {	// )
+    	if (input_len<INPUT_MAX) { input_buffer[input_len++] = ')'; }
     		kputchar(')');
+    		outb(0x20,0x20); return;
+    	}
+    	else if (sc==0x35) {	// _
+    	if (input_len<INPUT_MAX) { input_buffer[input_len++] = '_'; }
+    		kputchar('_');
     		outb(0x20,0x20); return;
     	}
     }
@@ -287,56 +293,3 @@ void irq1_handler(void) {
     outb(0x20, 0x20);
 }
 
-unsigned int tokenize(const char* input, char* tokens[], unsigned int max_tokens) {
-    unsigned int count = 0; const char* start = input;
-
-    while (*start && count < max_tokens) {
-        while (*start == ' ') start++;
-        if (*start == '\0') break;
-
-        tokens[count++] = (char*)start;	// mark token start
-        while (*start != ' ' && *start != '\0') start++; // move to end of token
-
-        if (*start != '\0') {	// terminate token if not end of string
-            *(char*)start = '\0';
-            start++;
-        }
-    }
-
-    return count;	}
-
-
-void handle_command(const char* cmd) {
-	// kprint("ran "); kprint(cmd); kprint("\n");	// DEBUG
-	// unsigned int length = kstrlen(cmd);			// DEBUG
-	// kprint_int(length); kprint("\n");			// DEBUG
-	char* tokens[MAX_ARGS];
-	unsigned int n = tokenize(cmd,tokens,MAX_ARGS);
-	if(n==0)return;
-
-	if (strcmp(tokens[0], "shutdown") == 0)
-	{
-		kprint("Putting CPU to sleep...");
-		start_delay(2000, shutdown);	// 2000 ms = 2 seconds
-	}
-	else if (strcmp(tokens[0], "clear") == 0) {
-		kclear_screen();
-	}
-	else if (strcmp(tokens[0], "help") == 0) {
-		print_help();
-	}
-	else if (strcmp(tokens[0], "uptime") == 0) {
-		kprint_int(uptime);
-		kprint("\n"); kprint("\n");
-	}
-	else if (strcmp(tokens[0], "echo") == 0 && n > 1) {
-		for (unsigned int i=1;i<n;i++) {
-			kprint(tokens[i]); kprint(" ");
-			if (i<n-1);
-		}
-		kprint("\n");
-	}
-	else {
-		kprintln("Unknown command");
-	}
-}
