@@ -1,28 +1,37 @@
 // kernel.c - panacheOS C kernel "ANEMOIA"
 
 #include <stdint.h>
-#include "headers/irq.h"
-#include "headers/string.h"
-#include "headers/kernel.h"
-#include "headers/ports.h"
-#include "headers/memory.h"
+#include "irq.h"
+#include "string.h"
+#include "kernel.h"
+#include "ports.h"
+#include "memory.h"
 
-#define VGA_TEXT_BUFFER ((uint8_t*)0xB8000)
-#define VGA_WIDTH  80
-#define VGA_HEIGHT 25
+#define VGA_TEXT_BUFFER 		((uint8_t*)	0xB8000)
+#define VGA_ROW_BYTES 			(VGA_WIDTH * 2)
+#define MEMORY_MAP_BASE 		0x00000500
 
-#define MAX_ARGS 8
-#define MAX_HISTORY 16
-#define TEXT_ATTR 0
+#define VGA_WIDTH  				80
+#define VGA_HEIGHT 				25
+#define MAX_ARGS 				8
+#define MAX_HISTORY 			16
+#define TEXT_ATTR 				0
+#define MEMORY_MAP_ENTRY_SIZE 	24
+#define MEMORY_MAP_ENTRIES		6
+#define SCROLLBACK_LINES 		1000
 
 static delay_t cpu_delay;
 
 unsigned int ktstrlen(const char* s);
+static int scrollback_head = 0;  
+static int scrollback_size = 0; 
+static int scroll_offset = 0;   
 
 static uint8_t text_attr = 0;
-uint16_t cursor_pos = 0;
-
+static uint8_t scrollback[SCROLLBACK_LINES] [VGA_ROW_BYTES];
 uint8_t vga_attr(void) { return text_attr; }
+
+uint16_t cursor_pos = 0;
 
 // --- COLOR ---
 typedef struct {
@@ -30,37 +39,41 @@ typedef struct {
 	uint8_t value;
 } color_entry_t;
 
-	static color_entry_t color_table[] = {
-	    {"black",         0x00},
-	    {"blue",          0x01},
-	    {"green",         0x02},
-	    {"cyan",          0x03},
-	    {"red",           0x04},
-	    {"magenta",       0x05},
-	    {"brown",         0x06},
-	    {"light_grey",    0x07},
-	    {"dark_grey",     0x08},
-	    {"light_blue",    0x09},
-	    {"light_green",   0x0A},
-	    {"light_cyan",    0x0B},
-	    {"light_red",     0x0C},
-	    {"light_magenta", 0x0D},
-	    {"yellow",        0x0E},
-	    {"white",         0x0F},
+static color_entry_t color_table[] = {
+	{"black",         0x00},
+    {"blue",          0x01},
+	{"green",         0x02},
+	{"cyan",          0x03},
+	{"red",           0x04},
+	{"magenta",       0x05},
+	{"brown",         0x06},
+	{"light_grey",    0x07},
+	{"dark_grey",     0x08},
+	{"light_blue",    0x09},
+	{"light_green",   0x0A},
+	{"light_cyan",    0x0B},
+	{"light_red",     0x0C},
+	{"light_magenta", 0x0D},
+	{"yellow",        0x0E},
+	{"white",         0x0F},
 	};
+
 uint8_t lookup_color(const char* name) {
 	 for (unsigned int i = 0; i < sizeof(color_table)/sizeof(color_table[0]); i++) {
 	      if (strcmp(name, color_table[i].name) == 0)
 	            return color_table[i].value; }
-	  return 0xFF;	} // illegal
+	  return 0xFF;	// illegal
+	} 
 
 void set_fg(uint8_t fg) {
 	uint8_t bg = (text_attr >> 4) & 0x0F;
-	text_attr = (bg << 4) | (fg & 0x0F);	}
+	text_attr = (bg << 4) | (fg & 0x0F);	
+}
 
 void set_bg(uint8_t bg) {
 	uint8_t fg = text_attr & 0x0F;
-	text_attr = (bg << 4) | (fg & 0x0F);		}
+	text_attr = (bg << 4) | (fg & 0x0F);		
+}
 
 // --- CURSOR MOVEMENT ---
 static void update_hw_cursor(void) {
@@ -84,6 +97,7 @@ void move_cursor_right() {
 void move_cursor_up() {
 	if (cursor_pos >= VGA_WIDTH) cursor_pos -= VGA_WIDTH;
 	update_hw_cursor();
+	
 }
 
 void move_cursor_down() {
@@ -91,7 +105,6 @@ void move_cursor_down() {
 		cursor_pos += VGA_WIDTH;
 	update_hw_cursor();
 }
-
 
 // clear entire screen
 void kclear_screen(void) {
@@ -104,22 +117,48 @@ void kclear_screen(void) {
     update_hw_cursor();
 }
 
-// scroll
-static void scroll_screen(void) {
-	volatile uint8_t* vga = VGA_TEXT_BUFFER;
-	for (int row=1; row<VGA_HEIGHT; row++) {
-		int src=row*VGA_WIDTH*2;
-		int dst=(row-1)*VGA_WIDTH*2;
-		for (int col=0;col<VGA_WIDTH*2;col++){
-			vga[dst+col]=vga[src+col];
-		}
-	}
-	int last=(VGA_HEIGHT-1)*VGA_WIDTH*2;
-	for (int col=0;col<VGA_WIDTH;col++){
-		vga[last+col*2] = ' ';
-		vga[last+col*2+1]=text_attr;
-	}
-	cursor_pos=(VGA_HEIGHT-1)*VGA_WIDTH;
+static void kredraw_screen(void) {
+    volatile uint16_t* vga = (uint16_t*)VGA_TEXT_BUFFER;
+
+    for (int row = 0; row < VGA_HEIGHT; row++) {
+        int buffer_line = (scrollback_head - scroll_offset - VGA_HEIGHT + row);
+
+        if (buffer_line < 0)
+            buffer_line += SCROLLBACK_LINES;
+
+        buffer_line %= SCROLLBACK_LINES;
+
+        for (int col = 0; col < VGA_WIDTH; col++) {
+            uint8_t ch   = scrollback[buffer_line][col * 2];
+            uint8_t attr = scrollback[buffer_line][col * 2 + 1];
+
+            vga[row * VGA_WIDTH + col] = (attr << 8) | ch;
+        }
+    }
+}
+
+static void kscroll_screen(void) {
+    scrollback_head = (scrollback_head + 1) % SCROLLBACK_LINES;
+
+    if (scrollback_size < SCROLLBACK_LINES)
+        scrollback_size++;
+
+    for (int i = 0; i < VGA_ROW_BYTES; i += 2) {
+        scrollback[scrollback_head][i]     = ' ';
+        scrollback[scrollback_head][i + 1] = text_attr;
+    }
+
+    scroll_offset = 0; // reset view to bottom
+    cursor_pos = (VGA_HEIGHT - 1) * VGA_WIDTH;
+
+    kredraw_screen();
+}
+
+void scroll_up(void) {
+    if (scroll_offset < scrollback_size - VGA_HEIGHT) {
+        scroll_offset++;
+        kredraw_screen();
+    }
 }
 
 // set character
@@ -130,7 +169,7 @@ void kputchar(char c) {
     if (c == '\n') {
         cursor_pos = (cursor_pos / VGA_WIDTH + 1) * VGA_WIDTH;
         if (cursor_pos >= VGA_WIDTH * VGA_HEIGHT) {
-            scroll_screen();
+            kscroll_screen();
         }
         update_hw_cursor();
         return;
@@ -145,10 +184,9 @@ void kputchar(char c) {
     	} update_hw_cursor(); return;
     }
 
-
     // normal character
     if (cursor_pos >= VGA_WIDTH * VGA_HEIGHT) {
-        scroll_screen();
+        kscroll_screen();
     }
     
     uint16_t offset = cursor_pos * 2;
@@ -157,7 +195,7 @@ void kputchar(char c) {
     cursor_pos++;
 
 	if (cursor_pos>=VGA_WIDTH*VGA_HEIGHT) {
-		scroll_screen();
+		kscroll_screen();
 	}
     
     update_hw_cursor();
@@ -242,7 +280,8 @@ unsigned int tokenize(const char* input, char* tokens[], unsigned int max_tokens
         }
     }
 
-    return count;	}
+    return count;	
+}
 
 // CPU forever loop
 void shutdown(void) {
@@ -309,6 +348,25 @@ void handle_command(const char* cmd) {
 	}
 }
 
+void get_memory_regions(void) {
+	for (uint32_t i = 0; i < MEMORY_MAP_ENTRIES; i++) {
+		uint64_t entry_addr = MEMORY_MAP_BASE + (i * MEMORY_MAP_ENTRY_SIZE);
+		uint64_t base = *(uint64_t*)(entry_addr + 0x00);
+		uint64_t size = *(uint64_t*)(entry_addr + 0x08);
+		uint64_t type = *(uint32_t*)(entry_addr + 0x10);
+
+		kprint("--- REGION "); kprint_int(i+1); kprint(" ---\n");
+		kprint("Region start address: "); kprint_hex(base); kprint("\n");
+		kprint("Region memory size: "); kprint_hex(size); kprint("\n");
+		kprint("Region memory type: ");
+		if (type == 1)
+			kprint("Usable\n");
+		else
+			kprint("Reserved / Bad memory\n");
+		kprint("\n");
+	}
+}
+
 void kernel_main(void) {
 	text_attr = VGA_COLOR_WHITE;
     kclear_screen();
@@ -334,26 +392,7 @@ void kernel_main(void) {
     get_memmap_count();
     kprint("\n");
 
-	kprint("--- REGION 1 ---\n");
-    uint64_t* base_ptr = (uint64_t*)0x00000500;
-    uint64_t* size_ptr = (uint64_t*)0x00000508;
-    uint64_t* type_ptr = (uint64_t*)0x00000510;
-    
-    uint64_t base = *base_ptr;
-	uint64_t size = *size_ptr;
-	uint64_t type = *type_ptr;
-    
-    kprint("Region start address: "); kprint_hex(base); kprint("\n");
-    kprint("Region memory size: "); kprint_hex(size); kprint("\n");
-    kprint("Region memory type: "); 
-	if (type == 0x0000001) kprint("Usable\n"); else kprint("Bad memory\n");
-
-	uint32_t* lulz = (uint32_t*)0x00000528;
-	uint32_t lelz = *lulz;
-	kprint_hex(lelz); // BIOS memory, reserved (EBDA/BIOS region)
-	// so that +24 = VGA/MMIO, that +24 = main RAM, that +24 = ACPI reclaimable,
-	// that +24 = ACPI NVS and that should be it... maybe firmware regions later
-	// ONLY type 1 RAM is usable, other is dangerous to work with
+	get_memory_regions();
 
 	text_attr = VGA_COLOR_L_GREEN;
     kprintln("\nrunning panacheOS 1.0");

@@ -40,6 +40,8 @@ void move_cursor_right(void);
 void move_cursor_up(void);
 void move_cursor_down(void);
 
+void scroll_up(void);
+
 char to_upper(char c);
 
 extern uint16_t cursor_pos;

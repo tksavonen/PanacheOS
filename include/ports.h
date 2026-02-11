@@ -1,7 +1,7 @@
 // ports.h - low-level port I/O for panacheOS
 
-#ifndef PORTS.H
-#define PORTS.H
+#ifndef PORTS_H
+#define PORTS_H
 
 #pragma once
 #include <stdint.h>

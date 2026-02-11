@@ -1,6 +1,6 @@
 // string.c
 
-#include "headers/string.h"
+#include "string.h"
 
 int strcmp(char* a, char* b)
 {

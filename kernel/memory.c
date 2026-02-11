@@ -1,8 +1,8 @@
 // memory.c
 
 #include <stdint.h>
-#include "headers/memory.h"
-#include "headers/kernel.h"
+#include "memory.h"
+#include "kernel.h"
 
 #define ALIGN 8
 #define NULL 0
@@ -35,6 +35,6 @@ void heap_reset(void* mark) {
 }
 
 void* get_memmap_count(void) {
-	uint16_t lol = *MEMMAP_COUNT;
-	kprint("E820 reports "); kprint_hex(lol); kprint(" as physical memory regions.");
+	uint16_t mm_count = *MEMMAP_COUNT;
+	kprint("E820 reports "); kprint_hex(mm_count); kprint(" physical memory regions.");
 }

@@ -2,11 +2,11 @@
 
 #include <stdint.h>
 #include <stdbool.h>
-#include "headers/ports.h"
-#include "headers/idt.h"
-#include "headers/irq.h"
-#include "headers/kernel.h"
-#include "headers/string.h"
+#include "ports.h"
+#include "idt.h"
+#include "irq.h"
+#include "kernel.h"
+#include "string.h"
 
 #define INPUT_MAX 80
 
@@ -181,7 +181,7 @@ bool delay_expired(void) {
 
 void handle_extended_key(uint8_t sc) {
 	switch (sc) {
-		case 0x48: move_cursor_up();	break;
+		case 0x48: scroll_up();	        break;
 		case 0x50: move_cursor_down();	break;
 		case 0x4B: move_cursor_left();	break;
 		case 0x4D: move_cursor_right();	break;
@@ -191,7 +191,7 @@ void handle_extended_key(uint8_t sc) {
 // call delay like this:
 //__asm__ __volatile__("sti"); delay(time);
 
-// --- Register key events ---
+// register key events 
 void irq1_handler(void) {
     uint8_t sc = inb(0x60);  // read scancode
 

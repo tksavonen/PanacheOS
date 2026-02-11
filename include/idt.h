@@ -1,7 +1,7 @@
 // idt.h
 
-#ifndef IDT.H
-#define IDT.H
+#ifndef IDT_H
+#define IDT_H
 
 #pragma once
 #include <stdint.h>

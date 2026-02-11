@@ -1,7 +1,7 @@
 // ports.c
 
 #include <stdint.h>
-#include "headers/ports.h"
+#include "ports.h"
 
 uint8_t inb(uint16_t port){
 	uint8_t ret;
